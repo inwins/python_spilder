@@ -1,7 +1,9 @@
 import requests
 from urllib import request
 from lxml import etree
-from selenium import webdriver
+#from selenium import webdriver
+import selenium.webdriver.chrome as  webdriver
+#import selenium.webdriver.firefox as  webdriver
 import platform
 import os
 import time
@@ -33,8 +35,18 @@ def download_song(song_id, song_name):
 
     req = requests.get(url, headers=headers, allow_redirects=False)
     song_url = req.headers['Location']
+    print(req.status_code,url,song_url)
+    if("mp3" not in song_url):
+        return "NotFound"
     try:
-        request.urlretrieve(song_url, path + "/" + song_name + ".mp3")
+        #request.urlretrieve(song_url, path + "/" + song_name + ".mp3")
+        name=path + "/" + song_name + ".mp3"
+        os.system("wget {} -O {} ".format(url,name))
+        os.system("ffplay \"{}\"".format(name))
+        correct=input("是否下载正确Y/N")
+        if(correct == "N"):
+            os.unlink()
+            return "NotCorrect"
         print("{}--下载完成".format(song_name))
     except:
         print("{}--下载失败".format(song_name))
@@ -42,11 +54,11 @@ def download_song(song_id, song_name):
 
 def download(items):
     """全部歌曲下载"""
-
+    ret=None
     for item in items:
         song_id = item.get('href').strip('/song?id=')
         song_name = item.text
-        download_song(song_id, song_name)
+        ret=download_song(song_id, song_name)
     print("－－－－－－－下载完成－－－－－－－")
 
 
@@ -84,26 +96,54 @@ def song_id_down(id):
     url = 'https://music.163.com/song?id={}'.format(id)
 
     name = get_song_name(url)
-    download_song(id, name)
+    ret=download_song(id, name)
+    if(ret==None):
+        return True
+    else:
+        return False
+
+class WebDriver():
+    @classmethod
+    def Instance(cls, *args, **kwargs):
+        if not hasattr(WebDriver, "_instance"):
+            WebDriver._instance = WebDriver(*args, **kwargs)
+        return WebDriver._instance
+    def releaseInstance():
+        if hasattr(WebDriver, "_instance"):
+            del WebDriver._instance 
+        
+    def __init__(self):
+        options = webdriver.options.Options()
+        options.add_argument(
+            'User-Agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.81 Safari/537.36"')
+        options.add_argument('--headless')
+        self.driver = webdriver.webdriver.WebDriver(options=options)
+    def __del__(self):
+        #self.driver.close()
+        self.driver.quit()
+
 
 
 def selenium_get_html(url):
     """通过selenium获得页面源码"""
 
-    options = webdriver.ChromeOptions()
-    options.add_argument(
-        'User-Agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.81 Safari/537.36"')
-    options.add_argument('--headless')
-    driver = webdriver.Chrome(chrome_options=options)
-    driver.get(url)
-    driver.switch_to.frame('contentFrame')
-    return driver.page_source
+    try:
+        driver=WebDriver.Instance().driver
+        driver.get(url)
+        driver.switch_to.frame('contentFrame')
+        ret=driver.page_source
+    except Exception as e:
+           print(e) 
+           ret=None
+    return ret
 
 
 def search_input_song(url):
     """获取歌曲名字和id"""
 
-    html = selenium_get_html(url)
+    html=None
+    while(html == None):
+        html = selenium_get_html(url)
 
     root = etree.HTML(html)
     id = root.xpath('//div[@class="srchsongst"]//div[@class="td w0"]//div[@class="text"]/a[1]/@href')
@@ -145,14 +185,15 @@ def main(name, choose_id):
         ids = []
         for i, j, k in com:
             ids.append(k)
-            print("歌曲名称:{0}-------演唱者:{1}-------id:{2}".format(i, j, k))
+            print("歌曲名称:{0}-------演唱者:{1}-------id: {2}".format(i, j, k))
         while True:
             id = input("请输入需要下载的id(输入q退出):")
             if id == 'q':
                 return
             if id in ids:
-                song_id_down(id)
-                return
+                ret=song_id_down(id)
+                if(ret):
+                    return
             print("请输入正确的id!!!")
     elif choose_id == 2:
         url = 'https://music.163.com/#/search/m/?s={}&type=100'.format(name)
@@ -185,7 +226,7 @@ def recognition():
 
 
 if __name__ == '__main__':
-    path = input("请输入完整路径地址:")
+    path = "./download"#input("请输入完整路径地址:")
     if not os.path.exists(path):
         os.makedirs(path)
     while True:
@@ -198,6 +239,7 @@ if __name__ == '__main__':
         print("=========================")
         choose_id = int(input("搜索类型:"))
         if choose_id == 4:
+            WebDriver.releaseInstance()
             break
         elif choose_id != 1 and choose_id != 2 and choose_id != 3:
             print("请按要求输入!!!")
@@ -206,6 +248,4 @@ if __name__ == '__main__':
             recognition()
             name = input("请输入搜索内容:")
             main(name, choose_id)
-            print("3秒后返回主页面")
-            time.sleep(3)
 
